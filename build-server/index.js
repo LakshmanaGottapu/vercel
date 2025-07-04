@@ -1,12 +1,10 @@
 import path from 'path';
 import dotenv from 'dotenv';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { exec } from 'child_process';
+import { execSync } from 'child_process';
 import { readdirSync, statSync, createReadStream } from 'fs';
-import { promisify } from 'util';
 
 dotenv.config();
-const execPromise = promisify(exec); // Convert exec to promise-based
 
 const {
   GITHUB_REPO_URL,
@@ -19,25 +17,29 @@ const {
 const directoryPath = path.join(process.cwd(), 'output');
 const s3path = path.join(directoryPath, 'dist');
 async function runProcess() {
-  try {
-    // 1. Clone repository
-    await execPromise(`git clone ${GITHUB_REPO_URL} ${directoryPath}`);
-    console.log('Repository cloned successfully');
-
-    // 2. Install dependencies - using absolute path to yarn
-    await execPromise(`yarn install`, { cwd: directoryPath, shell:true });
-    console.log('Dependencies installed successfully');
-
-    // 3. Build project
-    await execPromise(`yarn build`, { cwd: directoryPath, shell:true });
-    console.log('Project built successfully');
-
-    // 4. Upload to S3
-    await uploadToS3(s3path);
-  } catch (error) {
-    console.error('Process failed:', error);
-    process.exit(1);
-  }
+  // 1. Clone repository
+  // try {
+  //   execSync(`git clone ${GITHUB_REPO_URL} ${directoryPath}`, { stdio: 'inherit', shell: true });
+  // } catch (error) {
+  //   console.error('❌ Git clone failed:', error.stderr?.toString() || error.message);
+  //   process.exit(1);
+  // }
+  // // 2. Install dependencies - using absolute path to yarn
+  // try {
+  //   execSync(`yarn install`, { cwd: directoryPath, shell: true, stdio: 'inherit' });
+  // } catch (error) {
+  //   console.error('❌ Git clone failed:', error.stderr?.toString() || error.message);
+  //   process.exit(1);
+  // }
+  // // 3. Build project
+  // try {
+  //   execSync(`yarn build`, { cwd: directoryPath, shell: true, stdio: 'inherit' });
+  // } catch (error) {
+  //   console.error('❌ Git clone failed:', error.stderr?.toString() || error.message);
+  //   process.exit(1);
+  // }
+  // 4. Upload to S3
+  await uploadToS3(s3path);
 }
 
 const s3Client = new S3Client({
@@ -63,15 +65,16 @@ async function uploadToS3(directoryPath) {
         const relativePath = path.relative(s3path, filePath);
         const s3Key = relativePath.replace(/\\/g, '/'); // Ensure S3 key is in the correct format
         await s3Client.send(new PutObjectCommand({
-            Bucket: S3_BUCKET_NAME,
-            Key: s3Key,
-            Body: fileStream,
-            ContentType: getContentType(filePath),
-            CacheControl: path.extname(filePath) === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable'        
+          Bucket: S3_BUCKET_NAME,
+          Key: s3Key,
+          Body: fileStream,
+          ContentType: getContentType(filePath),
+          CacheControl: path.extname(filePath) === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable'
         }));
         console.log(`Uploaded ${relativePath} to S3`);
       } catch (err) {
         console.error(`Error uploading ${file}:`, err);
+        process.exit(1);
       }
     }
   }
