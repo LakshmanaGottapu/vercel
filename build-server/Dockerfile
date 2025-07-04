@@ -23,9 +23,7 @@ COPY package*.json .
 RUN npm install
 COPY . .
 
-RUN chmod +x main.sh
+# RUN chmod +x main.sh
 
-
-EXPOSE 3000
 # Default command (can be overridden)
-ENTRYPOINT ["/app/main.sh"]
+CMD ["npm", "start"]
