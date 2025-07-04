@@ -26,4 +26,4 @@ COPY . .
 # RUN chmod +x main.sh
 
 # Default command (can be overridden)
-CMD ["npm", "start"]
+ENTRYPOINT [ "/app/main.sh" ]

@@ -18,12 +18,12 @@ const directoryPath = path.join(process.cwd(), 'output');
 const s3path = path.join(directoryPath, 'dist');
 async function runProcess() {
   // 1. Clone repository
-  try {
-    execSync(`git clone ${GITHUB_REPO_URL} ${directoryPath}`, { stdio: 'inherit', shell: true });
-  } catch (error) {
-    console.error('❌ Git clone failed:', error.stderr?.toString() || error.message);
-    process.exit(1);
-  }
+  // try {
+  //   execSync(`git clone ${GITHUB_REPO_URL} ${directoryPath}`, { stdio: 'inherit', shell: true });
+  // } catch (error) {
+  //   console.error('❌ Git clone failed:', error.stderr?.toString() || error.message);
+  //   process.exit(1);
+  // }
   // 2. Install dependencies - using absolute path to yarn
   try {
     execSync(`yarn install`, { cwd: directoryPath, shell: true, stdio: 'inherit' });
