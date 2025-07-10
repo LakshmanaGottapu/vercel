@@ -21,9 +21,10 @@ RUN node --version && \
 WORKDIR /app
 COPY package*.json .
 RUN npm install
-COPY . .
+COPY index.js index.js
+COPY main.sh main.sh
 
-# RUN chmod +x main.sh
+RUN chmod +x main.sh
 
 # Default command (can be overridden)
 ENTRYPOINT [ "/app/main.sh" ]

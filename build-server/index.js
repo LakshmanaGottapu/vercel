@@ -3,42 +3,30 @@ import dotenv from 'dotenv';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { execSync } from 'child_process';
 import { readdirSync, statSync, createReadStream } from 'fs';
+import { contentType } from 'mime-types';
 
 dotenv.config();
-
-const {
-  GITHUB_REPO_URL,
-  AWS_ACCESS_KEY,
-  AWS_SECRET_KEY,
-  AWS_REGION,
-  S3_BUCKET_NAME
-} = process.env;
+const { AWS_ACCESS_KEY, AWS_SECRET_KEY, AWS_REGION, S3_BUCKET_NAME, PROJECT_ID } = process.env;
 
 const directoryPath = path.join(process.cwd(), 'output');
 const s3path = path.join(directoryPath, 'dist');
+
 async function runProcess() {
-  // 1. Clone repository
-  // try {
-  //   execSync(`git clone ${GITHUB_REPO_URL} ${directoryPath}`, { stdio: 'inherit', shell: true });
-  // } catch (error) {
-  //   console.error('❌ Git clone failed:', error.stderr?.toString() || error.message);
-  //   process.exit(1);
-  // }
-  // 2. Install dependencies - using absolute path to yarn
+  // 1. Install dependencies - using absolute path to yarn
   try {
-    execSync(`yarn install`, { cwd: directoryPath, shell: true, stdio: 'inherit' });
+    execSync(`npm install`, { cwd: directoryPath, shell: true, stdio: 'inherit' });
   } catch (error) {
-    console.error('❌yarn install:', error.stderr?.toString() || error.message);
+    console.error('npm install:', error.stderr?.toString() || error.message);
     process.exit(1);
   }
-  // 3. Build project
+  // 2. Build project
   try {
-    execSync(`yarn build`, { cwd: directoryPath, shell: true, stdio: 'inherit' });
+    execSync(`npm run build`, { cwd: directoryPath, shell: true, stdio: 'inherit' });
   } catch (error) {
-    console.error('❌ yarn build failed:', error.stderr?.toString() || error.message);
+    console.error('❌ npm build failed:', error.stderr?.toString() || error.message);
     process.exit(1);
   }
-  // 4. Upload to S3
+  // 3. Upload to S3
   await uploadToS3(s3path);
 }
 
@@ -51,24 +39,21 @@ const s3Client = new S3Client({
 });
 
 async function uploadToS3(directoryPath) {
-  const files = readdirSync(directoryPath);
-
+  const files = readdirSync(directoryPath, {recursive:true});
   for (const file of files) {
     const filePath = path.join(directoryPath, file);
     const stats = statSync(filePath);
-
-    if (stats.isDirectory()) {
-      await uploadToS3(filePath);
-    } else {
+    if (stats.isDirectory()) continue;
+    else {
       try {
         const fileStream = createReadStream(filePath);
         const relativePath = path.relative(s3path, filePath);
         const s3Key = relativePath.replace(/\\/g, '/'); // Ensure S3 key is in the correct format
         await s3Client.send(new PutObjectCommand({
           Bucket: S3_BUCKET_NAME,
-          Key: s3Key,
+          Key: `__outputs/${PROJECT_ID}/${s3Key}`,
           Body: fileStream,
-          ContentType: getContentType(filePath),
+          ContentType: contentType(path.extname(filePath)) ?? 'application/octet-stream',
           CacheControl: path.extname(filePath) === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable'
         }));
         console.log(`Uploaded ${relativePath} to S3`);
@@ -79,20 +64,5 @@ async function uploadToS3(directoryPath) {
     }
   }
 }
-const getContentType = (filePath) => {
-  const ext = path.extname(filePath).toLowerCase();
-  const types = {
-    '.js': 'application/javascript',
-    '.css': 'text/css',
-    '.html': 'text/html',
-    '.json': 'application/json',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.svg': 'image/svg+xml',
-    '.woff': 'font/woff',
-    '.woff2': 'font/woff2'
-  };
-  return types[ext] || 'application/octet-stream';
-};
 
 runProcess();

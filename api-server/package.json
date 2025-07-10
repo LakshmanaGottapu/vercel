@@ -1,8 +1,9 @@
 {
-  "name": "build-server",
+  "name": "api-server",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js"
@@ -10,11 +11,10 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "module",
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.840.0",
+    "@aws-sdk/client-ecs": "^3.840.0",
     "dotenv": "^17.0.1",
     "express": "^5.1.0",
-    "mime-types": "^3.0.1"
+    "random-word-slugs": "^0.1.7"
   }
 }
