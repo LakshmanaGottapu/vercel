@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 const { PORT = 3000, AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME } = process.env;
 const s3Client = new S3Client({
-  region: AWS_REGION,
+    region: AWS_REGION,
     credentials: {
         accessKeyId: AWS_ACCESS_KEY_ID,
         secretAccessKey: AWS_SECRET_ACCESS_KEY
@@ -22,27 +22,39 @@ http.createServer(async (req, res) => {
         Bucket: S3_BUCKET_NAME,
         Key: key // Use the correct S3 object key
     });
-    try{
+    try {
         const data = await s3Client.send(command);
-        res.writeHead(200, {'Content-Type': contentType, 'Cache-Control': contentType==='text/html' ? 'no-cache' : 'public, max-age=31536000, immutable'});
+        res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': contentType === 'text/html' ? 'no-cache' : 'public, max-age=31536000, immutable' });
         data.Body.pipe(res);
-    }catch(error){
-        if(req.url === '/'){
+    } catch (error) {
+        if (req.url === '/') {
             res.writeHead(404, { 'Content-Type': 'text/html' });
             res.end("Failed to fetch from AWS S3: " + error.message);
-        }
-        else{
-            const fallbackKey = `__outputs/${subdomain}/index.html`; // Fallback to index.html if the requested path is not found
-            const fallbackcommand = new GetObjectCommand({
-                Bucket: S3_BUCKET_NAME,
-                Key: fallbackKey // Use the correct S3 object key
-            });
-            const fallbackdata = await s3Client.send(fallbackcommand);
-            res.writeHead(200, { 'Content-Type': 'text/html' });
-            fallbackdata.Body.pipe(res);
+        } else {
+            try {
+                const fallbackKey = `__outputs/${subdomain}/index.html`; // Fallback to index.html if the requested path is not found
+                const fallbackcommand = new GetObjectCommand({
+                    Bucket: S3_BUCKET_NAME,
+                    Key: fallbackKey // Use the correct S3 object key
+                });
+                const fallbackdata = await s3Client.send(fallbackcommand);
+                res.writeHead(200, { 'Content-Type': 'text/html' });
+                fallbackdata.Body.pipe(res);
+            } catch (fallbackError) {
+                res.writeHead(404, { 'Content-Type': 'text/html' });
+                res.end(`
+                    <html>
+                    <head><title>404 Not Found</title></head>
+                    <body>
+                        <h1>Not Found</h1>
+                        <p>${fallbackError.message}</p>
+                    </body>
+                    </html>
+                `);
+            }
         }
     }
 }).listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}/`);
+    console.log(`Server running at http://localhost:${PORT}/`);
 });
 

@@ -1,5 +1,9 @@
-.env
+*.env
 node_modules
 index1.js
 output
 logs
+/generated/prisma
+postgres_db_data
+redis_pubsub_data
+proxy_server_data

@@ -1,0 +1,83 @@
+services:
+  proxy-server:
+    build:
+      context: ./proxy-server
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+    volumes:
+      - ./proxy-server:/app
+
+  redis-pubsub:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_pubsub_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  api-server:
+    build:
+      context: ./api-server
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./api-server/.env
+    depends_on:
+      - postgresDB
+      - redis-pubsub
+    restart: always
+    volumes:
+      - ./logs:/app/logs
+
+  postgresDB:
+    image: postgres:latest
+    env_file:
+      - ./db.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lakshman -d verceldb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  proxy_server_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: D:/vercel/proxy_server_data
+      o: bind
+  db_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: D:/vercel/postgres_db_data
+      o: bind
+  api_server_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: D:/vercel/api_server_data
+      o: bind
+  logs:
+    driver: local
+    driver_opts:
+      type: none
+      device: D:/vercel/logs
+      o: bind
+  redis_pubsub_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: D:/vercel/redis_pubsub_data
+      o: bind

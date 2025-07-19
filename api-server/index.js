@@ -5,18 +5,24 @@ import { ECSClient, RunTaskCommand } from "@aws-sdk/client-ecs";
 import { generateSlug } from "random-word-slugs";
 import Redis from "ioredis";
 import dotenv from "dotenv";
+import { PrismaClient } from '@prisma/client'
+
+
+const prisma = new PrismaClient();
 dotenv.config();
 
 const PORT = process.env.PORT ?? 8000;
 const { AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, ECS_CLUSTER_NAME, ECS_TASK_DEFINITION, ECS_SUBNETS, ECS_VPC_ID, ECS_SECURITY_GROUPS, ECS_CONTAINER_NAME, S3_BUCKET_NAME, REDIS_HOST, REDIS_PORT } = process.env;
 const app = express();
 const dirPath = path.join(process.cwd(), 'logs');
+const redisHost = REDIS_HOST || 'localhost';
+const redisPort = REDIS_PORT || 6379;
 if(!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
 }
 const redis = new Redis({
-    host: REDIS_HOST,
-    port: REDIS_PORT,
+    host: redisHost,
+    port: redisPort,
     retryStrategy: (times) => {
         const delay = Math.min(times * 1000, 30000); // Exponential backoff with max delay of 30 seconds
         console.log(`Retrying Redis connection in ${delay}ms...`);
@@ -40,13 +46,38 @@ redis.on('end', () => {
 redis.on('reconnecting', () => {
     console.log('Redis is reconnecting...');
 });
-redis.on('message', (channel, message) => {
+redis.subscribe('Deployment', (err, count) => {
+    if (err) {
+        console.error('Failed to subscribe to Redis channel:', err);
+    } else {
+        console.log(`Subscribed to Redis channel 'Deployment'. Current subscription count: ${JSON.stringify(count)}`);
+    }
+});
+redis.on('message', async (channel, message) => {
+    if(channel == 'Deployment') {
+        const data = JSON.parse(message);
+        if (data.type === 'DEPLOYMENT_STATUS') {
+            // Update deployment status in database
+            await prisma.deployment.updateMany({
+                where: {
+                    project: { slug: data.projectId },
+                    status: 'PENDING' // Update only if not already completed
+                },
+                data: {
+                    status: data.status,
+                    completedAt: new Date()
+                }
+            });
+            console.log(`Updated deployment status for ${channel}: ${data.status}`);
+        }
+        return ;
+    } 
     // This will log messages received on the subscribed channel
     // Handle the message as needed
-    const folderPath = path.join(dirPath, new Date().toISOString().split('T')[0]);
+    const folderPath = path.join(dirPath, channel);
     if (!fs.existsSync(folderPath)) 
         fs.mkdirSync(folderPath);
-    const filePath = path.join(folderPath,  `${channel}.log`);
+    const filePath = path.join(folderPath,  `${new Date().toISOString().split('T')[0]}.log`);
     fs.appendFile(filePath, `-> ${message}\n`, (err) => {
         if (err) console.error('Error writing to log file:', err);
         else console.log(`Logged message to ${filePath}`);
@@ -81,13 +112,58 @@ const config = {
     }
 };
 const ecsClient = new ECSClient(config);
-app.post("/project", async (req, res) => {
-    const { gitURL } = req.body;
+app.post("/project/create", async (req, res) => {
+    const { slug, gitURL } = req.body;
+    const projectName = slug ?? generateSlug();
     if (!gitURL) {
         console.error("gitURL is not provided in the request body.");
-        res.status(400).json({ error: "gitURL is required." });
+        return res.status(400).json({ error: "gitURL is required." });
     }
-    const projectId = generateSlug();
+    if (!/^(https?|git):\/\/[^\s/$.?#].[^\s]*$/.test(gitURL)) {
+        console.error("Invalid gitURL format:", gitURL);
+        return res.status(400).json({ error: "Invalid gitURL format." });
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(projectName)) {
+        console.error("Invalid project name format:", projectName);
+        return res.status(400).json({ error: "Project name can only contain lowercase letters, numbers, and hyphens." });
+    }
+    const existingProject = await prisma.project.findUnique({
+        where: { slug: projectName }
+    });
+    if (existingProject) {
+        console.error(`Project with slug ${projectName} already exists.`);
+        return res.status(400).json({ error: "Project with this name already exists." });
+    }
+    console.log("Creating project with name:", projectName, "and gitURL:", gitURL);
+    // Create the project in the database
+    try {
+        const project = await prisma.project.create({
+            data: {
+                slug:projectName,
+                gitURL
+            }
+        });
+        console.log("Project created:", project);
+        res.status(201).json(project);
+    } catch (error) {
+        console.error("Error creating project:", error);
+        res.status(500).json({ error: "Failed to create project." });
+    }
+});
+app.post("/deploy", async (req, res) => {
+    const { slug } = req.body;
+    if( !slug) {
+        console.error("slug is not provided in the request body.");
+        return res.status(400).json({ error: "slug is required." });
+    }
+    const project = await prisma.project.findUnique({
+        where: { slug }
+    });
+    if (!project) {
+        console.error(`Project with slug ${slug} not found.`);
+        return res.status(404).json({ error: "Project not found." });
+    }
+    const projectId = project.slug;
     const command = new RunTaskCommand({
         cluster: ECS_CLUSTER_NAME, // Replace with your ECS cluster name  
         taskDefinition: ECS_TASK_DEFINITION, // Replace with your ECS task definition});
@@ -105,14 +181,14 @@ app.post("/project", async (req, res) => {
                 {
                     name: ECS_CONTAINER_NAME, // Replace with your container name
                     environment: [
-                        { name: "GITHUB_REPO_URL", value: gitURL },
-                        { name: "PROJECT_ID", value: projectId },
+                        { name: "GITHUB_REPO_URL", value: project.gitURL },
+                        { name: "PROJECT_ID", value: project.slug },
                         { name: "AWS_ACCESS_KEY", value: AWS_ACCESS_KEY_ID },
                         { name: "AWS_SECRET_KEY", value: AWS_SECRET_ACCESS_KEY },
                         { name: "AWS_REGION", value: AWS_REGION },
                         { name: "S3_BUCKET_NAME", value: S3_BUCKET_NAME },
-                        { name: "REDIS_HOST", value: REDIS_HOST },
-                        { name: "REDIS_PORT", value: REDIS_PORT }
+                        { name: "REDIS_HOST", value: redisHost },
+                        { name: "REDIS_PORT", value: redisPort }
                     ]
                 }
             ]
@@ -121,8 +197,13 @@ app.post("/project", async (req, res) => {
     console.log("Running ECS task");
     // Send the command to ECS
     try {
-        const response = await ecsClient.send(command);
-        // console.log(response);
+        await ecsClient.send(command);
+        await prisma.deployment.create({
+            data: {
+                project: { connect: { id: project.id } },
+                status: "PENDING"
+            }
+        });
         redis.subscribe(projectId, (err, count) => {
             if (err) {
                 console.error('Failed to subscribe to Redis channel:', err);
@@ -136,5 +217,7 @@ app.post("/project", async (req, res) => {
         res.status(500).json({ error: "Failed to run ECS task." });
     }
 })
-
+app.get("/", (__, res)=>{
+    res.send("Hello I am api server")
+})
 app.listen(PORT, () => console.log(`listening to http://localhost:${PORT}`))

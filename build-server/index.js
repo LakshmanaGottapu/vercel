@@ -37,8 +37,10 @@ redis.on('end', () => {
   process.exit(0);
 });
 function publishLog(message){
-  if(typeof message !== 'string') {
+  if(typeof message === 'object') {
     message = JSON.stringify(message);
+    redis.publish(`Deployment`, message);
+    return;
   }
   redis.publish(PROJECT_ID, message);
   // console.log(`Published message to Redis channel ${PROJECT_ID}:`, message);
@@ -122,11 +124,23 @@ async function uploadToS3(directoryPath) {
       } catch (err) {
         console.error(`Error uploading ${file}:`, err);
         publishLog(`❌ Error uploading ${file}: ${err.message}`);
+        publishLog({
+          type: 'DEPLOYMENT_STATUS',
+          projectId: PROJECT_ID,
+          status: 'FAILED',
+          message: err.message
+        });
         process.exit(1);
       }
     }
   }
   publishLog(`All files uploaded to S3 bucket ${S3_BUCKET_NAME}`);
+  publishLog({
+    type: 'DEPLOYMENT_STATUS',
+    projectId: PROJECT_ID,
+    status: 'COMPLETED',
+    message: `Deployment completed successfully`
+  });
   console.log(`All files uploaded to S3 bucket ${S3_BUCKET_NAME}`);
   redis.quit();
   process.exit(0);
