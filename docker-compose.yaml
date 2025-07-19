@@ -4,12 +4,9 @@ services:
       context: ./proxy-server
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
-    environment:
-      - PORT=3000
-    volumes:
-      - ./proxy-server:/app
-
+      - "80:80"
+    env_file:
+      - ./proxy-server/.env
   redis-pubsub:
     image: redis:latest
     ports:
@@ -51,33 +48,21 @@ services:
       retries: 5
 
 volumes:
-  proxy_server_data:
-    driver: local
-    driver_opts:
-      type: none
-      device: D:/vercel/proxy_server_data
-      o: bind
   db_data:
     driver: local
     driver_opts:
       type: none
-      device: D:/vercel/postgres_db_data
-      o: bind
-  api_server_data:
-    driver: local
-    driver_opts:
-      type: none
-      device: D:/vercel/api_server_data
+      device: /home/ec2-user/vercel/postgres_db_data
       o: bind
   logs:
     driver: local
     driver_opts:
       type: none
-      device: D:/vercel/logs
+      device: /home/ec2-user/vercel/logs
       o: bind
   redis_pubsub_data:
     driver: local
     driver_opts:
       type: none
-      device: D:/vercel/redis_pubsub_data
+      device: /home/ec2-user/vercel/redis_pubsub_data
       o: bind

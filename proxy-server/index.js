@@ -14,14 +14,18 @@ const s3Client = new S3Client({
 
 http.createServer(async (req, res) => {
     const host = req.headers.host || '';
-    const subdomain = host.split('.')[0]; // Extract subdomain from the host header
-    const requestedPath = req.url === '/' ? 'index.html' : req.url.slice(1); // Default to index.html if no specific path is requested
+	console.log('host: ', host);    
+const subdomain = host.split('.')[0]; // Extract subdomain from the host header
+   console.log('subdomain: ',subdomain);
+	const requestedPath = req.url === '/' ? 'index.html' : req.url.slice(1); // Default to index.html if no specific path is requested
     const contentType = lookup(requestedPath) || 'application/octet-stream'; // Get the content type based on the file extension
     const key = `__outputs/${subdomain}/${requestedPath}`; // Construct the S3 key based on the subdomain and requested path
     const command = new GetObjectCommand({
         Bucket: S3_BUCKET_NAME,
         Key: key // Use the correct S3 object key
     });
+    console.log("🔍 Requested URL:", req.url);
+    console.log("📦 Constructed S3 Key:", key);
     try {
         const data = await s3Client.send(command);
         res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': contentType === 'text/html' ? 'no-cache' : 'public, max-age=31536000, immutable' });
